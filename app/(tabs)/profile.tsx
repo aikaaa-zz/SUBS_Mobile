@@ -42,6 +42,14 @@ export default function ProfileScreen() {
     setSaving(true);
     setError('');
     try {
+      // Try backend save first; silently fall back to local-only if endpoint doesn't exist yet
+      if (session?.userId) {
+        try {
+          await userAPI.updateProfile(session.userId, { firstName, lastName, email });
+        } catch (backendError) {
+          console.warn('Backend profile update unavailable, saving locally:', backendError);
+        }
+      }
       const updatedUser = { ...session?.user, firstName, lastName, email };
       await storage.setItem('user', JSON.stringify(updatedUser));
       await storage.setItem('userFirstName', firstName);

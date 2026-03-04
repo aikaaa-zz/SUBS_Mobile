@@ -13,6 +13,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { storage } from '../../utils/storage';
 import { trackPageView, trackBookingSubmission } from '../../utils/analyticsTracker';
 import { Colors, FontSize, FontWeight, BorderRadius, Shadows, Spacing } from '../../constants/theme';
+import { API_BASE_URL } from '../../constants/api';
 
 export default function BookingPortalScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -36,6 +37,7 @@ export default function BookingPortalScreen() {
   const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
 
   // OTP
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -88,12 +90,50 @@ export default function BookingPortalScreen() {
     setPersonnelName(person.name);
   };
 
+  const REQUIRE_OTP = true;
+
+  const checkAvailability = async (): Promise<boolean> => {
+    const dateStr = bookingDate.toISOString().split('T')[0];
+    const timeStr = bookingTime.toTimeString().slice(0, 5);
+    try {
+      setCheckingAvailability(true);
+      const response = await bookingAPI.getBusinessBookings(website.businessId);
+      const existingBookings = response.bookings || response.data || response || [];
+      const conflict = existingBookings.find((b: any) => {
+        if (b.status === 'cancelled') return false;
+        const sameDate = b.date === dateStr;
+        const sameTime = b.time === timeStr;
+        const sameStaff = personnelId ? (b.personnelId === personnelId) : false;
+        return sameDate && sameTime && sameStaff;
+      });
+      if (conflict) {
+        Alert.alert(
+          'Time Slot Unavailable',
+          `${personnelName || 'The selected staff member'} already has a booking at ${timeStr} on ${dateStr}. Please choose a different time or staff member.`
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.warn('Availability check failed, proceeding anyway:', error);
+      return true;
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!customerName || !customerEmail || !customerPhone || !service) {
       Alert.alert('Missing Fields', 'Please fill in all required fields');
       return;
     }
-    await sendOtp();
+    const available = await checkAvailability();
+    if (!available) return;
+    if (REQUIRE_OTP) {
+      await sendOtp();
+    } else {
+      await proceedToPayment();
+    }
   };
 
   const sendOtp = async () => {
@@ -170,7 +210,7 @@ export default function BookingPortalScreen() {
         const paymentData = {
           userId: session!.userId, amount: numericPrice,
           customerEmail, customerName,
-          redirectUrl: 'subs-mobile://payment-return',
+          redirectUrl: `${API_BASE_URL}/payment-return`,
           metadata: { service, date: dateStr, time: timeStr, businessName: website.name },
         };
         const paymentResponse = await paymentAPI.createGCashPayment(paymentData);
@@ -302,20 +342,43 @@ export default function BookingPortalScreen() {
           <Text style={styles.sectionTitle}>Booking Details</Text>
           <View style={styles.formGroup}>
             <View style={styles.labelRow}><Calendar size={18} color={Colors.textMuted} /><Text style={styles.label}> Preferred Date</Text></View>
-            <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-              <Text style={styles.dateInputText}>{bookingDate.toISOString().split('T')[0]}</Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker value={bookingDate} mode="date" minimumDate={new Date()} onChange={(_, d) => { setShowDatePicker(Platform.OS === 'ios'); if (d) setBookingDate(d); }} />
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={bookingDate.toISOString().split('T')[0]}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e: any) => { if (e.target.value) setBookingDate(new Date(e.target.value + 'T00:00:00')); }}
+                style={{ backgroundColor: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 16, color: '#1a202c', width: '100%' }}
+              />
+            ) : (
+              <>
+                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+                  <Text style={styles.dateInputText}>{bookingDate.toISOString().split('T')[0]}</Text>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker value={bookingDate} mode="date" minimumDate={new Date()} onChange={(_, d) => { setShowDatePicker(Platform.OS === 'ios'); if (d) setBookingDate(d); }} />
+                )}
+              </>
             )}
           </View>
           <View style={styles.formGroup}>
             <View style={styles.labelRow}><Clock size={18} color={Colors.textMuted} /><Text style={styles.label}> Preferred Time</Text></View>
-            <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
-              <Text style={styles.dateInputText}>{bookingTime.toTimeString().slice(0, 5)}</Text>
-            </TouchableOpacity>
-            {showTimePicker && (
-              <DateTimePicker value={bookingTime} mode="time" onChange={(_, d) => { setShowTimePicker(Platform.OS === 'ios'); if (d) setBookingTime(d); }} />
+            {Platform.OS === 'web' ? (
+              <input
+                type="time"
+                value={bookingTime.toTimeString().slice(0, 5)}
+                onChange={(e: any) => { if (e.target.value) { const [h, m] = e.target.value.split(':'); const d = new Date(); d.setHours(Number(h), Number(m), 0, 0); setBookingTime(d); } }}
+                style={{ backgroundColor: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 16, color: '#1a202c', width: '100%' }}
+              />
+            ) : (
+              <>
+                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
+                  <Text style={styles.dateInputText}>{bookingTime.toTimeString().slice(0, 5)}</Text>
+                </TouchableOpacity>
+                {showTimePicker && (
+                  <DateTimePicker value={bookingTime} mode="time" onChange={(_, d) => { setShowTimePicker(Platform.OS === 'ios'); if (d) setBookingTime(d); }} />
+                )}
+              </>
             )}
           </View>
           <View style={styles.formGroup}>
@@ -324,9 +387,9 @@ export default function BookingPortalScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={[styles.submitBtn, (submitting || otpSending) && { opacity: 0.7 }]} onPress={handleSubmit} disabled={submitting || otpSending} activeOpacity={0.8}>
-          {submitting || otpSending ? (
-            <><ActivityIndicator color={Colors.white} /><Text style={styles.submitBtnText}>{otpSending ? 'Sending OTP...' : 'Processing...'}</Text></>
+        <TouchableOpacity style={[styles.submitBtn, (submitting || otpSending || checkingAvailability) && { opacity: 0.7 }]} onPress={handleSubmit} disabled={submitting || otpSending || checkingAvailability} activeOpacity={0.8}>
+          {submitting || otpSending || checkingAvailability ? (
+            <><ActivityIndicator color={Colors.white} /><Text style={styles.submitBtnText}>{checkingAvailability ? 'Checking availability...' : otpSending ? 'Sending OTP...' : 'Processing...'}</Text></>
           ) : (
             <><Send size={20} color={Colors.white} /><Text style={styles.submitBtnText}>Submit Booking</Text></>
           )}

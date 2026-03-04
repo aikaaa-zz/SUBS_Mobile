@@ -57,11 +57,11 @@ export const trackBookNowClick = async (websiteId: string, ownerId: string, busi
 };
 
 export const trackBookingSubmission = async (websiteId: string, ownerId: string, businessId: string, metadata = {}) => {
-  await trackEvent({ websiteId, ownerId, businessId, eventType: 'booking_submission', metadata });
+  await trackEvent({ websiteId, ownerId, businessId, eventType: 'booking_completed', metadata });
 };
 
 export const trackPaymentInitiation = async (websiteId: string, ownerId: string, businessId: string, metadata = {}) => {
-  await trackEvent({ websiteId, ownerId, businessId, eventType: 'payment_initiation', metadata });
+  await trackEvent({ websiteId, ownerId, businessId, eventType: 'booking_modal_open', metadata });
 };
 
 export default {

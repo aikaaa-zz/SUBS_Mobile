@@ -139,6 +139,13 @@ export const userAPI = {
       body: JSON.stringify(data),
     });
   },
+
+  updateProfile: async (userId: string, data: { firstName?: string; lastName?: string; email?: string }) => {
+    return await authFetch(`/user/${userId}/profile`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // Website API
@@ -191,6 +198,10 @@ export const bookingAPI = {
     return await authFetch(`/bookings/${bookingId}`, {
       method: 'DELETE',
     });
+  },
+
+  getBusinessBookings: async (businessId: string) => {
+    return await authFetch(`/bookings/business/${businessId}`);
   },
 };
 

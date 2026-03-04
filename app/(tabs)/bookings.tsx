@@ -4,7 +4,7 @@ import {
   ScrollView, RefreshControl, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Calendar, Clock, Phone, FileText, X, Edit } from 'lucide-react-native';
+import { Calendar, Clock, Phone, FileText, X, Edit, AlertTriangle } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Header from '../../components/Header';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -66,6 +66,38 @@ export default function BookingsScreen() {
       case 'completed': return { bg: '#dbeafe', text: '#1e40af' };
       case 'cancelled': return { bg: Colors.errorBg, text: '#991b1b' };
       default: return { bg: Colors.warningBg, text: '#92400e' };
+    }
+  };
+
+  const isWithin24Hours = (booking: any): boolean => {
+    try {
+      if (!booking.date || !booking.time) return false;
+      const [hours, minutes] = booking.time.split(':').map(Number);
+      const bookingDateTime = new Date(booking.date);
+      bookingDateTime.setHours(hours, minutes, 0, 0);
+      const now = new Date();
+      const diffMs = bookingDateTime.getTime() - now.getTime();
+      return diffMs >= 0 && diffMs <= 24 * 60 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleActionPress = (booking: any, action: 'cancel' | 'reschedule') => {
+    if (isWithin24Hours(booking)) {
+      Alert.alert(
+        'Within 24-Hour Window',
+        'This booking is within 24 hours and can no longer be modified. Please contact the business directly for changes.',
+      );
+      return;
+    }
+    if (action === 'cancel') {
+      setSelectedBooking(booking);
+      setShowCancelModal(true);
+    } else {
+      setSelectedBooking(booking);
+      setRescheduleDate(new Date(booking.date || Date.now()));
+      setShowRescheduleModal(true);
     }
   };
 
@@ -158,17 +190,20 @@ export default function BookingsScreen() {
           </View>
         ) : null}
 
+        {canAction && isWithin24Hours(item) && (
+          <View style={styles.policyWarning}>
+            <AlertTriangle size={14} color="#92400e" />
+            <Text style={styles.policyWarningText}>Within 24-hour cancellation window</Text>
+          </View>
+        )}
+
         {canAction && (
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setSelectedBooking(item); setShowCancelModal(true); }}>
+            <TouchableOpacity style={[styles.cancelBtn, isWithin24Hours(item) && { opacity: 0.5 }]} onPress={() => handleActionPress(item, 'cancel')}>
               <X size={16} color={Colors.errorRed} />
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.rescheduleBtn} onPress={() => {
-              setSelectedBooking(item);
-              setRescheduleDate(new Date(item.date || Date.now()));
-              setShowRescheduleModal(true);
-            }}>
+            <TouchableOpacity style={[styles.rescheduleBtn, isWithin24Hours(item) && { opacity: 0.5 }]} onPress={() => handleActionPress(item, 'reschedule')}>
               <Edit size={16} color={Colors.primaryOrange} />
               <Text style={styles.rescheduleBtnText}>Reschedule</Text>
             </TouchableOpacity>
@@ -264,30 +299,53 @@ export default function BookingsScreen() {
             </Text>
 
             <Text style={styles.formLabel}>New Date</Text>
-            <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-              <Calendar size={18} color={Colors.textMuted} />
-              <Text style={styles.dateInputText}>{rescheduleDate.toISOString().split('T')[0]}</Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={rescheduleDate}
-                mode="date"
-                minimumDate={new Date()}
-                onChange={(_, date) => { setShowDatePicker(Platform.OS === 'ios'); if (date) setRescheduleDate(date); }}
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={rescheduleDate.toISOString().split('T')[0]}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e: any) => { if (e.target.value) setRescheduleDate(new Date(e.target.value + 'T00:00:00')); }}
+                style={{ backgroundColor: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 16, color: '#1a202c', width: '100%', marginBottom: 16 }}
               />
+            ) : (
+              <>
+                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+                  <Calendar size={18} color={Colors.textMuted} />
+                  <Text style={styles.dateInputText}>{rescheduleDate.toISOString().split('T')[0]}</Text>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={rescheduleDate}
+                    mode="date"
+                    minimumDate={new Date()}
+                    onChange={(_, date) => { setShowDatePicker(Platform.OS === 'ios'); if (date) setRescheduleDate(date); }}
+                  />
+                )}
+              </>
             )}
 
             <Text style={styles.formLabel}>New Time</Text>
-            <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
-              <Clock size={18} color={Colors.textMuted} />
-              <Text style={styles.dateInputText}>{rescheduleTime.toTimeString().slice(0, 5)}</Text>
-            </TouchableOpacity>
-            {showTimePicker && (
-              <DateTimePicker
-                value={rescheduleTime}
-                mode="time"
-                onChange={(_, date) => { setShowTimePicker(Platform.OS === 'ios'); if (date) setRescheduleTime(date); }}
+            {Platform.OS === 'web' ? (
+              <input
+                type="time"
+                value={rescheduleTime.toTimeString().slice(0, 5)}
+                onChange={(e: any) => { if (e.target.value) { const [h, m] = e.target.value.split(':'); const d = new Date(); d.setHours(Number(h), Number(m), 0, 0); setRescheduleTime(d); } }}
+                style={{ backgroundColor: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 16, color: '#1a202c', width: '100%', marginBottom: 16 }}
               />
+            ) : (
+              <>
+                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
+                  <Clock size={18} color={Colors.textMuted} />
+                  <Text style={styles.dateInputText}>{rescheduleTime.toTimeString().slice(0, 5)}</Text>
+                </TouchableOpacity>
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={rescheduleTime}
+                    mode="time"
+                    onChange={(_, date) => { setShowTimePicker(Platform.OS === 'ios'); if (date) setRescheduleTime(date); }}
+                  />
+                )}
+              </>
             )}
 
             <View style={styles.modalActions}>
@@ -332,6 +390,8 @@ const styles = StyleSheet.create({
   detailValue: { fontSize: FontSize.md, color: Colors.textDark, flex: 1 },
   notesRow: { marginBottom: 6 },
   notesText: { fontSize: FontSize.md, color: Colors.textDark, marginTop: 4 },
+  policyWarning: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, backgroundColor: Colors.warningBg, paddingHorizontal: 10, paddingVertical: 6, borderRadius: BorderRadius.md },
+  policyWarningText: { fontSize: FontSize.xs, color: '#92400e', fontWeight: FontWeight.medium },
   actions: { flexDirection: 'row', gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.borderColor },
   cancelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.errorRed },
   cancelBtnText: { color: Colors.errorRed, fontWeight: FontWeight.semibold, fontSize: FontSize.md },
